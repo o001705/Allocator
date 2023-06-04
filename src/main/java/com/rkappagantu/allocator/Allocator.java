@@ -10,12 +10,12 @@ import com.rkappagantu.allocator.model.Item;
 import com.rkappagantu.allocator.repository.ControlTableRepository;
 import com.rkappagantu.allocator.repository.ItemRepository;
 import com.rkappagantu.allocator.service.FileMoverService;
+import com.rkappagantu.allocator.util.FileLocker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import com.rkappagantu.allocator.model.Control_Table;
-
 
 @SpringBootApplication
 public class Allocator implements CommandLineRunner {
@@ -84,26 +84,34 @@ public class Allocator implements CommandLineRunner {
         int totalExecutors = 3;
         final String directoryPath = "D:\\CODE\\UPLOAD";
 
-        FileMoverService fms = new FileMoverService();
-        List<Control_Table> l = controlTableRepository.customMethod("ASPECT");
-        if (l != null) {
-            // Create Dummy Files for testing
-            // create instance of Random class
-            Random rand = new Random();
-            int numFiles = rand.nextInt(1000);
-            fms.createDummyFiles(directoryPath, numFiles);
-            batch = l.get(0).getBatchNum() + 1;
+        FileLocker fLock = new FileLocker();
+        if (fLock.getExclusiveLock("D:\\LOCK.TXT")) {
+            List<Control_Table> l = controlTableRepository.customMethod("ASPECT");
+            if (l != null) {
+                FileMoverService fms = new FileMoverService();
+                // Create Dummy Files for testing
+                // create instance of Random class
+                Random rand = new Random();
+                int numFiles = rand.nextInt(1000);
+                fms.createDummyFiles(directoryPath, numFiles);
+                batch = l.get(0).getBatchNum() + 1;
 
-            List<Item> pendingItems = itemRepository.getPendingItems("PENDING", "ASPECT");
-            List<Path> fileList = fms.listFiles(directoryPath);
-            removeDuplicates(pendingItems, fileList);
-            ProcessThread [] pList = createExecutorThreads(directoryPath, totalExecutors);
-            assignWorkToExecutors(fileList, totalExecutors, batch);
-            waitForExecutors(pList);
-            l.get(0).setBatchNum(batch);
-            controlTableRepository.updateControl(l.get(0));
-        }
-        else {
+                List<Item> pendingItems = itemRepository.getPendingItems("PENDING", "ASPECT");
+                List<Path> fileList = fms.listFiles(directoryPath);
+                removeDuplicates(pendingItems, fileList);
+                ProcessThread[] pList = createExecutorThreads(directoryPath, totalExecutors);
+                assignWorkToExecutors(fileList, totalExecutors, batch);
+                waitForExecutors(pList);
+                l.get(0).setBatchNum(batch);
+                controlTableRepository.updateControl(l.get(0));
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            fLock.releaseExclusiveLock();
+        } else {
             System.out.println("File lock could not be acquired");
         }
     }
